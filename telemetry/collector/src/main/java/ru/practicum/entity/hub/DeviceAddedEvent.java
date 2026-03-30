@@ -1,11 +1,16 @@
 package ru.practicum.entity.hub;
 
+import lombok.Getter;
+import lombok.Setter;
+
+@Getter
+@Setter
 public class DeviceAddedEvent extends HubEvent{
     String id;
-    private DeviceType type;
+    private DeviceType deviceType;
 
     @Override
     public HubEventType getType() {
-        return HubEventType.DeviceAddedEvent;
+        return HubEventType.DEVICE_ADDED;
     }
 }

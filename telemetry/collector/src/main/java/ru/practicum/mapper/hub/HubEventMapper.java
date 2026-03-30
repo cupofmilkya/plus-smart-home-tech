@@ -17,17 +17,17 @@ public class HubEventMapper {
 
         switch (event.getType()) {
 
-            case DeviceAddedEvent -> {
+            case DEVICE_ADDED -> {
                 DeviceAddedEvent e = (DeviceAddedEvent) event;
 
                 DeviceAddedEventAvro payload = new DeviceAddedEventAvro();
                 payload.setId(e.getId());
-                payload.setType(DeviceTypeAvro.valueOf(e.getType().name()));
+                payload.setType(DeviceTypeAvro.valueOf(e.getDeviceType().name()));
 
                 avro.setPayload(payload);
             }
 
-            case DeviceRemovedEvent -> {
+            case DEVICE_REMOVED -> {
                 DeviceRemovedEvent e = (DeviceRemovedEvent) event;
 
                 DeviceRemovedEventAvro payload = new DeviceRemovedEventAvro();
@@ -36,7 +36,7 @@ public class HubEventMapper {
                 avro.setPayload(payload);
             }
 
-            case ScenarioAddedEvent -> {
+            case SCENARIO_ADDED -> {
                 ScenarioAddedEvent e = (ScenarioAddedEvent) event;
 
                 ScenarioAddedEventAvro payload = new ScenarioAddedEventAvro();
@@ -57,7 +57,7 @@ public class HubEventMapper {
                 avro.setPayload(payload);
             }
 
-            case ScenarioRemovedEvent -> {
+            case SCENARIO_REMOVED -> {
                 ScenarioRemovedEvent e = (ScenarioRemovedEvent) event;
 
                 ScenarioRemovedEventAvro payload = new ScenarioRemovedEventAvro();
@@ -76,8 +76,6 @@ public class HubEventMapper {
         avro.setSensorId(c.getSensorId());
         avro.setType(ConditionTypeAvro.valueOf(c.getType().name()));
         avro.setOperation(ConditionOperationAvro.valueOf(c.getOperation().name()));
-
-        // union {null, int, boolean}
         avro.setValue(c.getValue());
 
         return avro;

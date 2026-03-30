@@ -14,6 +14,6 @@ public class ScenarioAddedEvent extends HubEvent {
 
     @Override
     public HubEventType getType() {
-        return HubEventType.ScenarioAddedEvent;
+        return HubEventType.SCENARIO_ADDED;
     }
 }
