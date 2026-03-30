@@ -3,20 +3,20 @@ package ru.practicum.controller;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import ru.yandex.practicum.kafka.telemetry.event.HubEventAvro;
-import ru.yandex.practicum.kafka.telemetry.event.SensorEventAvro;
+import ru.practicum.entity.hub.HubEvent;
+import ru.practicum.entity.sensor.SensorEvent;
 
 @RestController
 @RequestMapping("/events")
 public class CollectorController {
 
     @PostMapping("/hubs")
-    public void collectHub(HubEventAvro hubEventAvro) {
+    public void collectHub(HubEvent hubEvent) {
 
     }
 
     @PostMapping("/sensors")
-    public void collectSensors(SensorEventAvro sensorEventAvro) {
+    public void collectSensor(SensorEvent sensorEvent) {
 
     }
 }
