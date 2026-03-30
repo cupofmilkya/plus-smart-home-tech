@@ -9,7 +9,7 @@ import java.util.stream.Collectors;
 @Component
 public class HubEventMapper {
 
-    public HubEventAvro toAvro(HubEvent event) {
+    public static HubEventAvro toAvro(HubEvent event) {
         HubEventAvro avro = new HubEventAvro();
 
         avro.setHubId(event.getHubId());
@@ -44,13 +44,13 @@ public class HubEventMapper {
 
                 payload.setConditions(
                         e.getConditions().stream()
-                                .map(this::mapCondition)
+                                .map(HubEventMapper::mapCondition)
                                 .collect(Collectors.toList())
                 );
 
                 payload.setActions(
                         e.getActions().stream()
-                                .map(this::mapAction)
+                                .map(HubEventMapper::mapAction)
                                 .collect(Collectors.toList())
                 );
 
@@ -70,7 +70,7 @@ public class HubEventMapper {
         return avro;
     }
 
-    private ScenarioConditionAvro mapCondition(ScenarioCondition c) {
+    private static ScenarioConditionAvro mapCondition(ScenarioCondition c) {
         ScenarioConditionAvro avro = new ScenarioConditionAvro();
 
         avro.setSensorId(c.getSensorId());
@@ -83,7 +83,7 @@ public class HubEventMapper {
         return avro;
     }
 
-    private DeviceActionAvro mapAction(DeviceAction a) {
+    private static DeviceActionAvro mapAction(DeviceAction a) {
         DeviceActionAvro avro = new DeviceActionAvro();
 
         avro.setSensorId(a.getSensorId());

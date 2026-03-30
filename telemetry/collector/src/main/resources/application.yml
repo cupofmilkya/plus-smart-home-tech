@@ -1,0 +1,17 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    properties:
+      schema.registry.url: http://localhost:8081
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.VoidSerializer
+      value-serializer: io.confluent.kafka.serializers.KafkaAvroSerializer
+
+    logging:
+      level:
+        ru.practicum: DEBUG
+        org.springframework.kafka: INFO
+        org.apache.kafka: INFO
+        io.confluent: INFO

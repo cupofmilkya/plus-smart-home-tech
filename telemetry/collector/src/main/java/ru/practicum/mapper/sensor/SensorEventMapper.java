@@ -7,7 +7,7 @@ import ru.yandex.practicum.kafka.telemetry.event.*;
 @Component
 public class SensorEventMapper {
 
-    public SensorEventAvro toAvro(SensorEvent event) {
+    public static SensorEventAvro toAvro(SensorEvent event) {
         SensorEventAvro avro = new SensorEventAvro();
 
         avro.setId(event.getId());
