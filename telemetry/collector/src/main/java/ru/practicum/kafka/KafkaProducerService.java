@@ -20,7 +20,7 @@ public class KafkaProducerService {
     public void sendSensorEvent(SensorEventAvro event) {
         log.debug("Sending sensor event: id={}, hubId={}", event.getId(), event.getHubId());
 
-        String key = event.getHubId();
+        String key = (String) event.getHubId();
         CompletableFuture<SendResult<String, SensorEventAvro>> future =
                 sensorKafkaTemplate.send("telemetry.sensors.v1", key, event);
 
@@ -40,7 +40,7 @@ public class KafkaProducerService {
     public void sendHubEvent(HubEventAvro event) {
         log.debug("Sending hub event: hubId={}", event.getHubId());
 
-        String key = event.getHubId();
+        String key = (String) event.getHubId();
         CompletableFuture<SendResult<String, HubEventAvro>> future =
                 hubKafkaTemplate.send("telemetry.hubs.v1", key, event);
 
