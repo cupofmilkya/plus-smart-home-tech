@@ -3,6 +3,7 @@ package ru.practicum.entity.hub;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
 import lombok.Getter;
+import lombok.NoArgsConstructor;
 import lombok.Setter;
 import lombok.ToString;
 
@@ -11,6 +12,7 @@ import java.time.Instant;
 @Getter
 @Setter
 @ToString
+@NoArgsConstructor
 @JsonTypeInfo(
         use = JsonTypeInfo.Id.NAME,
         include = JsonTypeInfo.As.EXISTING_PROPERTY,
@@ -23,7 +25,6 @@ import java.time.Instant;
         @JsonSubTypes.Type(value = ScenarioRemovedEvent.class, name = "SCENARIO_REMOVED")
 })
 public abstract class HubEvent {
-    private String id;
     private String hubId;
     private Instant timestamp = Instant.now();
 
