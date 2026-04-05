@@ -1,0 +1,17 @@
+spring:
+  kafka:
+    bootstrap-servers: localhost:9092
+
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      properties:
+        enable-idempotence: false
+        acks: all
+
+logging:
+  level:
+    root: INFO
+    ru.practicum: DEBUG
+    ru.practicum.kafka.serialization: DEBUG
+    org.springframework.kafka: INFO
+    org.apache.kafka: INFO
