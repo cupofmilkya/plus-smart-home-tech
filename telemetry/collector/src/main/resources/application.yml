@@ -16,3 +16,7 @@ logging:
     ru.practicum.kafka.serialization: DEBUG
     org.springframework.kafka: INFO
     org.apache.kafka: INFO
+
+grpc:
+  server:
+    port: 59091
