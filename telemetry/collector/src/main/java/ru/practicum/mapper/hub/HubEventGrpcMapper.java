@@ -75,14 +75,18 @@ public class HubEventGrpcMapper {
     }
 
     private static ScenarioConditionAvro mapCondition(ScenarioConditionProto condition) {
-        return ScenarioConditionAvro.newBuilder()
+        ScenarioConditionAvro.Builder builder = ScenarioConditionAvro.newBuilder()
                 .setSensorId(condition.getSensorId())
                 .setType(mapConditionType(condition.getType()))
-                .setOperation(mapOperation(condition.getOperation()))
-                .setValue(condition.hasBoolValue() ?
-                        String.valueOf(condition.getBoolValue()) :
-                        String.valueOf(condition.getIntValue()))
-                .build();
+                .setOperation(mapOperation(condition.getOperation()));
+
+        if (condition.hasBoolValue()) {
+            builder.setValue(condition.getBoolValue());
+        } else if (condition.hasIntValue()) {
+            builder.setValue(condition.getIntValue());
+        }
+
+        return builder.build();
     }
 
     private static DeviceActionAvro mapAction(DeviceActionProto action) {
