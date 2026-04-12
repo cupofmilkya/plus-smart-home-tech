@@ -17,11 +17,12 @@ public class HubRouterClient {
         this.hubRouterClient = hubRouterClient;
     }
 
-    public void sendAction(String hubId, String scenarioName,
+    public void sendAction(String hubId, String scenarioName, String sensorId,
                            DeviceActionProto action, Timestamp timestamp) {
         DeviceActionRequest request = DeviceActionRequest.newBuilder()
                 .setHubId(hubId)
                 .setScenarioName(scenarioName)
+                .setSensorId(sensorId)
                 .setAction(action)
                 .setTimestamp(timestamp)
                 .build();

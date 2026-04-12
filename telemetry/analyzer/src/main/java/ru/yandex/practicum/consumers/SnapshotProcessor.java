@@ -37,6 +37,8 @@ public class SnapshotProcessor {
     @Value("${kafka.bootstrap-servers}")
     private String bootstrapServers;
 
+    private volatile boolean running = true;
+
     public void start() {
         Properties props = new Properties();
         props.put("bootstrap.servers", bootstrapServers);
@@ -49,7 +51,7 @@ public class SnapshotProcessor {
         try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props)) {
             consumer.subscribe(List.of("telemetry.snapshots.v1"));
 
-            while (true) {
+            while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, byte[]> record : records) {
                     processSnapshot(record.value());
@@ -64,7 +66,6 @@ public class SnapshotProcessor {
     private void processSnapshot(byte[] snapshotBytes) {
         try {
             Snapshot snapshot = deserializeSnapshot(snapshotBytes);
-
             List<Scenario> scenarios = scenarioRepository.findByHubId(snapshot.getHubId());
 
             for (Scenario scenario : scenarios) {
@@ -74,6 +75,7 @@ public class SnapshotProcessor {
                         hubRouterClient.sendAction(
                                 snapshot.getHubId(),
                                 scenario.getName(),
+                                action.getSensorId(),
                                 action,
                                 com.google.protobuf.Timestamp.newBuilder()
                                         .setSeconds(System.currentTimeMillis() / 1000)
@@ -165,5 +167,10 @@ public class SnapshotProcessor {
         }
 
         return null;
+    }
+
+    public void stop() {
+        running = false;
+        log.info("SnapshotProcessor stopped");
     }
 }

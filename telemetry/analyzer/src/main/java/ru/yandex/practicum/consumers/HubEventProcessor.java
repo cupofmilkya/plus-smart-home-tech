@@ -11,7 +11,9 @@ import ru.yandex.practicum.grpc.telemetry.event.*;
 import ru.yandex.practicum.repository.*;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
@@ -28,6 +30,8 @@ public class HubEventProcessor implements Runnable {
     @Value("${kafka.bootstrap-servers}")
     private String bootstrapServers;
 
+    private volatile boolean running = true;
+
     @Override
     public void run() {
         Properties props = new Properties();
@@ -42,7 +46,7 @@ public class HubEventProcessor implements Runnable {
             consumer.subscribe(List.of("telemetry.hubs.v1"));
             log.info("HubEventProcessor started, subscribed to telemetry.hubs.v1");
 
-            while (true) {
+            while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
                 records.forEach(record -> {
                     try {
@@ -113,14 +117,22 @@ public class HubEventProcessor implements Runnable {
                     scenarioRepository.delete(existingScenario);
                 });
 
+        // Находим все сенсоры, необходимые для условий
+        Map<String, Sensor> sensors = new HashMap<>();
+        for (ScenarioConditionProto conditionProto : scenarioProto.getConditionList()) {
+            String sensorId = conditionProto.getSensorId();
+            sensors.computeIfAbsent(sensorId, id -> sensorRepository.findById(id)
+                    .orElseThrow(() -> new RuntimeException("Sensor not found: " + id)));
+        }
+
         // Создаём новый сценарий
         Scenario scenario = new Scenario();
         scenario.setHubId(hubId);
         scenario.setName(scenarioName);
 
-        // Конвертируем и сохраняем условия
+        // Конвертируем и сохраняем условия (с привязкой к сенсорам)
         List<Condition> conditions = scenarioProto.getConditionList().stream()
-                .map(this::convertToCondition)
+                .map(cp -> convertToCondition(cp, sensors.get(cp.getSensorId())))
                 .collect(Collectors.toList());
         conditionRepository.saveAll(conditions);
         scenario.setConditions(conditions);
@@ -168,6 +180,22 @@ public class HubEventProcessor implements Runnable {
         return condition;
     }
 
+    private Condition convertToCondition(ScenarioConditionProto conditionProto, Sensor sensor) {
+        Condition condition = new Condition();
+        condition.setType(conditionProto.getType());
+        condition.setOperation(conditionProto.getOperation());
+        condition.setSensor(sensor);
+
+        // Устанавливаем значение в зависимости от типа
+        if (conditionProto.hasIntValue()) {
+            condition.setValue(conditionProto.getIntValue());
+        } else if (conditionProto.hasBoolValue()) {
+            condition.setValue(conditionProto.getBoolValue() ? 1 : 0);
+        }
+
+        return condition;
+    }
+
     private Action convertToAction(DeviceActionProto actionProto) {
         Action action = new Action();
         action.setType(actionProto.getType());
@@ -177,5 +205,10 @@ public class HubEventProcessor implements Runnable {
         }
 
         return action;
+    }
+
+    public void stop() {
+        running = false;
+        log.info("HubEventProcessor stopped");
     }
 }

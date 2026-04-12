@@ -29,8 +29,4 @@ public class Scenario {
             joinColumns = @JoinColumn(name = "scenario_id"),
             inverseJoinColumns = @JoinColumn(name = "action_id"))
     private List<Action> actions;
-
-    @ManyToOne
-    @JoinColumn(name = "sensor_id")
-    private Sensor sensor;
 }

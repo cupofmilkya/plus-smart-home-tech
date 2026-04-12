@@ -4,6 +4,7 @@ import org.springframework.stereotype.Service;
 import ru.yandex.practicum.entity.Snapshot;
 import ru.yandex.practicum.entity.Condition;
 import ru.yandex.practicum.entity.Scenario;
+import ru.yandex.practicum.entity.Action;
 import ru.yandex.practicum.grpc.telemetry.event.DeviceActionProto;
 
 import java.util.Collections;
@@ -15,34 +16,46 @@ public class ScenarioExecutor {
 
     public List<DeviceActionProto> evaluateScenario(Scenario scenario, Snapshot snapshot) {
         boolean allConditionsMet = scenario.getConditions().stream()
-                .allMatch(condition -> checkCondition(condition, snapshot));
+                .allMatch(condition -> {
+                    Object sensorValue = snapshot.getValue(condition.getSensor().getId());
+                    return checkCondition(condition, sensorValue);
+                });
 
-        if (allConditionsMet) {
-            return scenario.getActions().stream()
-                    .map(action -> DeviceActionProto.newBuilder()
-                            .setSensorId(scenario.getSensor().getId())
-                            .setType(action.getType())
-                            .setValue(action.getValue() != null ? action.getValue() : 0)
-                            .build())
-                    .collect(Collectors.toList());
+        if (!allConditionsMet) {
+            return Collections.emptyList();
         }
-        return Collections.emptyList();
+
+        return scenario.getActions().stream()
+                .map(this::convertToDeviceActionProto)
+                .collect(Collectors.toList());
     }
 
-    private boolean checkCondition(Condition condition, Snapshot snapshot) {
-        Object sensorValue = snapshot.getValue(condition.getSensor().getId());
+    private DeviceActionProto convertToDeviceActionProto(Action action) {
+        DeviceActionProto.Builder builder = DeviceActionProto.newBuilder()
+                .setType(action.getType());
 
+        if (action.getValue() != null) {
+            builder.setValue(action.getValue());
+        }
+
+        return builder.build();
+    }
+
+    private boolean checkCondition(Condition condition, Object sensorValue) {
         if (sensorValue == null) {
             return false;
         }
 
+        int intValue = ((Number) sensorValue).intValue();
+        int conditionValue = condition.getValue();
+
         switch (condition.getOperation()) {
             case EQUALS:
-                return sensorValue.equals(condition.getValue());
+                return intValue == conditionValue;
             case GREATER_THAN:
-                return (Integer) sensorValue > condition.getValue();
+                return intValue > conditionValue;
             case LOWER_THAN:
-                return (Integer) sensorValue < condition.getValue();
+                return intValue < conditionValue;
             default:
                 return false;
         }
