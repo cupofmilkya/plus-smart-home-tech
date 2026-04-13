@@ -1,5 +1,6 @@
 package ru.yandex.practicum.service;
 
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import ru.yandex.practicum.entity.Snapshot;
 import ru.yandex.practicum.entity.Condition;
@@ -12,6 +13,7 @@ import java.util.List;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class ScenarioExecutor {
 
     public List<DeviceActionProto> evaluateScenario(Scenario scenario, Snapshot snapshot) {
@@ -32,7 +34,8 @@ public class ScenarioExecutor {
 
     private DeviceActionProto convertToDeviceActionProto(Action action) {
         DeviceActionProto.Builder builder = DeviceActionProto.newBuilder()
-                .setType(action.getType());
+                .setType(action.getType())
+                .setSensorId(action.getSensorId());
 
         if (action.getValue() != null) {
             builder.setValue(action.getValue());
@@ -43,21 +46,31 @@ public class ScenarioExecutor {
 
     private boolean checkCondition(Condition condition, Object sensorValue) {
         if (sensorValue == null) {
+            log.debug("Condition check failed: sensor value is null for condition type={}", condition.getType());
             return false;
         }
 
         int intValue = ((Number) sensorValue).intValue();
         int conditionValue = condition.getValue();
 
+        boolean result;
         switch (condition.getOperation()) {
             case EQUALS:
-                return intValue == conditionValue;
+                result = intValue == conditionValue;
+                break;
             case GREATER_THAN:
-                return intValue > conditionValue;
+                result = intValue > conditionValue;
+                break;
             case LOWER_THAN:
-                return intValue < conditionValue;
+                result = intValue < conditionValue;
+                break;
             default:
-                return false;
+                result = false;
         }
+
+        log.debug("Condition check: type={}, operation={}, sensorValue={}, conditionValue={}, result={}",
+                condition.getType(), condition.getOperation(), intValue, conditionValue, result);
+
+        return result;
     }
 }

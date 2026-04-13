@@ -66,22 +66,37 @@ public class SnapshotProcessor {
     private void processSnapshot(byte[] snapshotBytes) {
         try {
             Snapshot snapshot = deserializeSnapshot(snapshotBytes);
+            log.info("Processing snapshot for hubId: {}, sensors: {}",
+                    snapshot.getHubId(), snapshot.getSensorValues().keySet());
+
             List<Scenario> scenarios = scenarioRepository.findByHubId(snapshot.getHubId());
+            log.info("Found {} scenarios for hubId: {}", scenarios.size(), snapshot.getHubId());
 
             for (Scenario scenario : scenarios) {
+                log.debug("Evaluating scenario: {} for hubId: {}", scenario.getName(), snapshot.getHubId());
+
                 List<DeviceActionProto> actions = scenarioExecutor.evaluateScenario(scenario, snapshot);
                 if (!actions.isEmpty()) {
+                    log.info("Scenario '{}' triggered for hubId: {}, executing {} actions",
+                            scenario.getName(), snapshot.getHubId(), actions.size());
+
                     for (DeviceActionProto action : actions) {
+                        log.info("Sending action to HubRouter: hubId={}, scenario={}, sensorId={}, type={}, value={}",
+                                snapshot.getHubId(), scenario.getName(), action.getSensorId(),
+                                action.getType(), action.hasValue() ? action.getValue() : "no value");
+
                         hubRouterClient.sendAction(
                                 snapshot.getHubId(),
                                 scenario.getName(),
                                 action.getSensorId(),
                                 action,
                                 com.google.protobuf.Timestamp.newBuilder()
-                                        .setSeconds(System.currentTimeMillis() / 1000)
+                                        .setSeconds(System.currentTimeMillis()  / 1000)
                                         .build()
                         );
                     }
+                } else {
+                    log.debug("Scenario '{}' conditions not met for hubId: {}", scenario.getName(), snapshot.getHubId());
                 }
             }
         } catch (Exception e) {
@@ -99,15 +114,18 @@ public class SnapshotProcessor {
 
             if (avroSnapshot.getSensorsState() != null) {
                 avroSnapshot.getSensorsState().forEach((sensorId, sensorState) -> {
+                    String sensorIdStr = sensorId.toString();
                     Object value = extractSensorValue(sensorState);
                     if (value != null) {
-                        sensorValues.put((String) sensorId, value);
+                        sensorValues.put(sensorIdStr, value);
                     }
                 });
             }
 
+            String hubIdStr = avroSnapshot.getHubId().toString();
+
             return Snapshot.builder()
-                    .hubId(avroSnapshot.getHubId().toString())
+                    .hubId(hubIdStr)
                     .sensorValues(sensorValues)
                     .build();
         } catch (Exception e) {

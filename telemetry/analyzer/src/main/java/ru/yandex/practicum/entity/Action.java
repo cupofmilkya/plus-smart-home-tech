@@ -18,4 +18,6 @@ public class Action {
     private ActionTypeProto type;
 
     private Integer value;
+
+    private String sensorId;
 }

@@ -2,9 +2,14 @@ package ru.yandex.practicum.consumers;
 
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.avro.io.Decoder;
+import org.apache.avro.io.DecoderFactory;
+import org.apache.avro.specific.SpecificDatumReader;
+import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.springframework.beans.factory.annotation.Value;
+import ru.yandex.practicum.kafka.telemetry.event.*;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.entity.*;
 import ru.yandex.practicum.grpc.telemetry.event.*;
@@ -48,40 +53,65 @@ public class HubEventProcessor implements Runnable {
 
             while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
-                records.forEach(record -> {
+                for (ConsumerRecord<String, byte[]> record : records) {
                     try {
-                        HubEventProto event = HubEventProto.parseFrom(record.value());
+                        log.debug("Received message from topic: {}, partition: {}, offset: {}, key: {}, value size: {} bytes",
+                                record.topic(), record.partition(), record.offset(), record.key(),
+                                record.value() != null ? record.value().length : 0);
+
+                        if (record.value() == null || record.value().length == 0) {
+                            log.warn("Empty or null message received");
+                            continue;
+                        }
+
+                        HubEventAvro event = deserializeHubEvent(record.value());
+                        log.info("Successfully parsed HubEventAvro: hubId={}, payloadType={}",
+                                event.getHubId(),
+                                event.getPayload().getClass().getSimpleName());
                         processHubEvent(event);
                     } catch (Exception e) {
-                        log.error("Error processing hub event", e);
+                        log.error("Error processing hub event at offset: {}", record.offset(), e);
                     }
-                });
+                }
             }
         } catch (Exception e) {
             log.error("Fatal error in HubEventProcessor", e);
         }
     }
 
-    private void processHubEvent(HubEventProto event) {
-        String hubId = event.getHubId();
-
-        if (event.hasDeviceAddedEvent()) {
-            handleDeviceAdded(hubId, event.getDeviceAddedEvent());
-        } else if (event.hasDeviceRemovedEvent()) {
-            handleDeviceRemoved(hubId, event.getDeviceRemovedEvent());
-        } else if (event.hasScenarioAddedEvent()) {
-            handleScenarioAdded(hubId, event.getScenarioAddedEvent());
-        } else if (event.hasScenarioRemovedEvent()) {
-            handleScenarioRemoved(hubId, event.getScenarioRemovedEvent());
-        } else {
-            log.warn("Unknown hub event type for hubId: {}", hubId);
+    private HubEventAvro deserializeHubEvent(byte[] bytes) {
+        try {
+            SpecificDatumReader<HubEventAvro> reader = new SpecificDatumReader<>(HubEventAvro.getClassSchema());
+            Decoder decoder = DecoderFactory.get().binaryDecoder(bytes, null);
+            return reader.read(null, decoder);
+        } catch (Exception e) {
+            log.error("Failed to deserialize Avro hub event", e);
+            throw new RuntimeException("Failed to deserialize hub event", e);
         }
     }
 
-    private void handleDeviceAdded(String hubId, DeviceAddedEventProto device) {
-        String sensorId = device.getId();
+    private void processHubEvent(HubEventAvro event) {
+        String hubId = event.getHubId().toString();
+        Object payload = event.getPayload();
 
-        // Проверяем, существует ли уже датчик
+        log.debug("Processing hub event: hubId={}, payloadType={}", hubId, payload.getClass().getSimpleName());
+
+        if (payload instanceof DeviceAddedEventAvro) {
+            handleDeviceAdded(hubId, (DeviceAddedEventAvro) payload);
+        } else if (payload instanceof DeviceRemovedEventAvro) {
+            handleDeviceRemoved(hubId, (DeviceRemovedEventAvro) payload);
+        } else if (payload instanceof ScenarioAddedEventAvro) {
+            handleScenarioAdded(hubId, (ScenarioAddedEventAvro) payload);
+        } else if (payload instanceof ScenarioRemovedEventAvro) {
+            handleScenarioRemoved(hubId, (ScenarioRemovedEventAvro) payload);
+        } else {
+            log.warn("Unknown hub event payload type: {}", payload.getClass());
+        }
+    }
+
+    private void handleDeviceAdded(String hubId, DeviceAddedEventAvro device) {
+        String sensorId = device.getId().toString();
+
         if (sensorRepository.existsById(sensorId)) {
             log.info("Device already exists, updating: id={}, hubId={}", sensorId, hubId);
             Sensor existingSensor = sensorRepository.findById(sensorId).get();
@@ -98,29 +128,25 @@ public class HubEventProcessor implements Runnable {
                 sensorId, hubId, device.getType());
     }
 
-    private void handleDeviceRemoved(String hubId, DeviceRemovedEventProto device) {
-        String sensorId = device.getId();
-
-        // Удаляем датчик
+    private void handleDeviceRemoved(String hubId, DeviceRemovedEventAvro device) {
+        String sensorId = device.getId().toString();
         sensorRepository.deleteById(sensorId);
         log.info("Device removed: id={}, hubId={}", sensorId, hubId);
     }
 
-    private void handleScenarioAdded(String hubId, ScenarioAddedEventProto scenarioProto) {
-        String scenarioName = scenarioProto.getName();
+    private void handleScenarioAdded(String hubId, ScenarioAddedEventAvro scenarioProto) {
+        String scenarioName = scenarioProto.getName().toString();
 
-        // Проверяем, существует ли уже сценарий с таким именем
         scenarioRepository.findByHubIdAndName(hubId, scenarioName)
                 .ifPresent(existingScenario -> {
                     log.info("Scenario already exists, updating: hubId={}, name={}", hubId, scenarioName);
-                    // Удаляем старый сценарий и его связи
                     scenarioRepository.delete(existingScenario);
                 });
 
         // Находим все сенсоры, необходимые для условий
         Map<String, Sensor> sensors = new HashMap<>();
-        for (ScenarioConditionProto conditionProto : scenarioProto.getConditionList()) {
-            String sensorId = conditionProto.getSensorId();
+        for (ScenarioConditionAvro conditionProto : scenarioProto.getConditions()) {
+            String sensorId = conditionProto.getSensorId().toString();
             sensors.computeIfAbsent(sensorId, id -> sensorRepository.findById(id)
                     .orElseThrow(() -> new RuntimeException("Sensor not found: " + id)));
         }
@@ -130,81 +156,90 @@ public class HubEventProcessor implements Runnable {
         scenario.setHubId(hubId);
         scenario.setName(scenarioName);
 
-        // Конвертируем и сохраняем условия (с привязкой к сенсорам)
-        List<Condition> conditions = scenarioProto.getConditionList().stream()
-                .map(cp -> convertToCondition(cp, sensors.get(cp.getSensorId())))
+        // Конвертируем и сохраняем условия
+        List<Condition> conditions = scenarioProto.getConditions().stream()
+                .map(cp -> convertToCondition(cp, sensors.get(cp.getSensorId().toString())))
                 .collect(Collectors.toList());
         conditionRepository.saveAll(conditions);
         scenario.setConditions(conditions);
 
         // Конвертируем и сохраняем действия
-        List<Action> actions = scenarioProto.getActionList().stream()
+        List<Action> actions = scenarioProto.getActions().stream()
                 .map(this::convertToAction)
                 .collect(Collectors.toList());
         actionRepository.saveAll(actions);
         scenario.setActions(actions);
 
-        // Сохраняем сценарий
         scenarioRepository.save(scenario);
 
         log.info("Scenario added: hubId={}, name={}, conditions={}, actions={}",
                 hubId, scenarioName, conditions.size(), actions.size());
     }
 
-    private void handleScenarioRemoved(String hubId, ScenarioRemovedEventProto scenarioProto) {
-        String scenarioName = scenarioProto.getName();
+    private void handleScenarioRemoved(String hubId, ScenarioRemovedEventAvro scenarioProto) {
+        String scenarioName = scenarioProto.getName().toString();
 
         scenarioRepository.findByHubIdAndName(hubId, scenarioName)
                 .ifPresent(scenario -> {
                     scenarioRepository.delete(scenario);
                     log.info("Scenario removed: hubId={}, name={}", hubId, scenarioName);
                 });
-
-        if (scenarioRepository.findByHubIdAndName(hubId, scenarioName).isEmpty()) {
-            log.warn("Scenario not found for removal: hubId={}, name={}", hubId, scenarioName);
-        }
     }
 
-    private Condition convertToCondition(ScenarioConditionProto conditionProto) {
+    private Condition convertToCondition(ScenarioConditionAvro conditionProto, Sensor sensor) {
         Condition condition = new Condition();
-        condition.setType(conditionProto.getType());
-        condition.setOperation(conditionProto.getOperation());
-
-        // Устанавливаем значение в зависимости от типа
-        if (conditionProto.hasIntValue()) {
-            condition.setValue(conditionProto.getIntValue());
-        } else if (conditionProto.hasBoolValue()) {
-            condition.setValue(conditionProto.getBoolValue() ? 1 : 0);
-        }
-
-        return condition;
-    }
-
-    private Condition convertToCondition(ScenarioConditionProto conditionProto, Sensor sensor) {
-        Condition condition = new Condition();
-        condition.setType(conditionProto.getType());
-        condition.setOperation(conditionProto.getOperation());
+        condition.setType(mapConditionType(conditionProto.getType()));
+        condition.setOperation(mapOperation(conditionProto.getOperation()));
         condition.setSensor(sensor);
 
-        // Устанавливаем значение в зависимости от типа
-        if (conditionProto.hasIntValue()) {
-            condition.setValue(conditionProto.getIntValue());
-        } else if (conditionProto.hasBoolValue()) {
-            condition.setValue(conditionProto.getBoolValue() ? 1 : 0);
+        Object value = conditionProto.getValue();
+        if (value instanceof Integer) {
+            condition.setValue((Integer) value);
+        } else if (value instanceof Boolean) {
+            condition.setValue((Boolean) value ? 1 : 0);
         }
 
         return condition;
     }
 
-    private Action convertToAction(DeviceActionProto actionProto) {
+    private Action convertToAction(DeviceActionAvro actionProto) {
         Action action = new Action();
-        action.setType(actionProto.getType());
+        action.setType(mapActionType(actionProto.getType()));
+        action.setSensorId(actionProto.getSensorId().toString());
 
-        if (actionProto.hasValue()) {
+        if (actionProto.getValue() != null) {
             action.setValue(actionProto.getValue());
         }
 
         return action;
+    }
+
+    private ConditionTypeProto mapConditionType(ConditionTypeAvro type) {
+        return switch (type) {
+            case MOTION -> ConditionTypeProto.MOTION;
+            case LUMINOSITY -> ConditionTypeProto.LUMINOSITY;
+            case SWITCH -> ConditionTypeProto.SWITCH;
+            case TEMPERATURE -> ConditionTypeProto.TEMPERATURE;
+            case CO2LEVEL -> ConditionTypeProto.CO2LEVEL;
+            case HUMIDITY -> ConditionTypeProto.HUMIDITY;
+        };
+    }
+
+    private ConditionOperationProto mapOperation(ConditionOperationAvro op) {
+        return switch (op) {
+            case EQUALS -> ConditionOperationProto.EQUALS;
+            case GREATER_THAN -> ConditionOperationProto.GREATER_THAN;
+            case LOWER_THAN -> ConditionOperationProto.LOWER_THAN;
+        };
+    }
+
+    private ActionTypeProto mapActionType(ActionTypeAvro type) {
+        return switch (type) {
+            case ACTIVATE -> ActionTypeProto.ACTIVATE;
+            case DEACTIVATE -> ActionTypeProto.DEACTIVATE;
+            case INVERSE -> ActionTypeProto.INVERSE;
+            case SET_VALUE -> ActionTypeProto.SET_VALUE;
+        };
     }
 
     public void stop() {
