@@ -32,12 +32,28 @@ public class HubRouterClient {
                 .setTimestamp(timestamp)
                 .build();
 
-        try {
-            hubRouterClient.handleDeviceAction(request);
-            log.info("Action sent successfully to HubRouter for hubId={}, scenarioName={}", hubId, scenarioName);
-        } catch (Exception e) {
-            log.error("Failed to send action to HubRouter: hubId={}, scenarioName={}", hubId, scenarioName, e);
-            throw e;
+        int maxRetries = 3;
+        int retryDelay = 1000;
+
+        for (int i = 0; i < maxRetries; i++) {
+            try {
+                hubRouterClient.handleDeviceAction(request);
+                log.info("Action sent successfully to HubRouter for hubId={}, scenarioName={}", hubId, scenarioName);
+                return;
+            } catch (Exception e) {
+                log.warn("Attempt {} failed to send action to HubRouter: {}", i + 1, e.getMessage());
+                if (i == maxRetries - 1) {
+                    log.error("Failed to send action to HubRouter after {} attempts: hubId={}, scenarioName={}",
+                            maxRetries, hubId, scenarioName, e);
+                    throw e;
+                }
+                try {
+                    Thread.sleep(retryDelay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    throw new RuntimeException("Interrupted while retrying", ie);
+                }
+            }
         }
     }
 }

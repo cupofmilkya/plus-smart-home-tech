@@ -139,11 +139,11 @@ public class HubEventProcessor implements Runnable {
 
         scenarioRepository.findByHubIdAndName(hubId, scenarioName)
                 .ifPresent(existingScenario -> {
-                    log.info("Scenario already exists, updating: hubId={}, name={}", hubId, scenarioName);
+                    log.info("Removing existing scenario: hubId={}, name={}", hubId, scenarioName);
                     scenarioRepository.delete(existingScenario);
+                    scenarioRepository.flush();
                 });
 
-        // Находим все сенсоры, необходимые для условий
         Map<String, Sensor> sensors = new HashMap<>();
         for (ScenarioConditionAvro conditionProto : scenarioProto.getConditions()) {
             String sensorId = conditionProto.getSensorId().toString();
@@ -151,23 +151,19 @@ public class HubEventProcessor implements Runnable {
                     .orElseThrow(() -> new RuntimeException("Sensor not found: " + id)));
         }
 
-        // Создаём новый сценарий
         Scenario scenario = new Scenario();
         scenario.setHubId(hubId);
         scenario.setName(scenarioName);
 
-        // Конвертируем и сохраняем условия
         List<Condition> conditions = scenarioProto.getConditions().stream()
                 .map(cp -> convertToCondition(cp, sensors.get(cp.getSensorId().toString())))
                 .collect(Collectors.toList());
-        conditionRepository.saveAll(conditions);
-        scenario.setConditions(conditions);
 
-        // Конвертируем и сохраняем действия
         List<Action> actions = scenarioProto.getActions().stream()
                 .map(this::convertToAction)
                 .collect(Collectors.toList());
-        actionRepository.saveAll(actions);
+
+        scenario.setConditions(conditions);
         scenario.setActions(actions);
 
         scenarioRepository.save(scenario);
