@@ -5,12 +5,16 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.ConfigurableApplicationContext;
+import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
+import org.springframework.transaction.annotation.EnableTransactionManagement;
 import ru.yandex.practicum.consumers.HubEventProcessor;
 import ru.yandex.practicum.consumers.SnapshotProcessor;
 
 @Slf4j
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableJpaRepositories(basePackages = "ru.yandex.practicum.repository")
+@EnableTransactionManagement
 public class Analyzer {
     public static void main(String[] args) {
         ConfigurableApplicationContext context = SpringApplication.run(Analyzer.class, args);
