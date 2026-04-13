@@ -6,6 +6,7 @@ grpc:
     hub-router:
       address: 'static://localhost:59090'
       enableKeepAlive: true
+      grpc.client.hub-router.enableKeepAlive: true
       keepAliveWithoutCalls: true
       negotiationType: plaintext
 
