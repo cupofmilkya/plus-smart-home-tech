@@ -50,27 +50,52 @@ public class ScenarioExecutor {
             return false;
         }
 
-        int intValue = ((Number) sensorValue).intValue();
-        int conditionValue = condition.getValue();
-
         boolean result;
-        switch (condition.getOperation()) {
-            case EQUALS:
-                result = intValue == conditionValue;
-                break;
-            case GREATER_THAN:
-                result = intValue > conditionValue;
-                break;
-            case LOWER_THAN:
-                result = intValue < conditionValue;
-                break;
-            default:
-                result = false;
+
+        if (sensorValue instanceof Boolean) {
+            boolean boolValue = (Boolean) sensorValue;
+            int conditionValue = condition.getValue();
+
+            switch (condition.getOperation()) {
+                case EQUALS:
+                    result = (boolValue && conditionValue == 1) || (!boolValue && conditionValue == 0);
+                    break;
+                default:
+                    log.warn("Unsupported operation {} for Boolean value", condition.getOperation());
+                    result = false;
+            }
+
+            log.debug("Condition check: type={}, operation={}, sensorValue={}, conditionValue={}, result={}",
+                    condition.getType(), condition.getOperation(), boolValue, conditionValue, result);
+            return result;
         }
 
-        log.debug("Condition check: type={}, operation={}, sensorValue={}, conditionValue={}, result={}",
-                condition.getType(), condition.getOperation(), intValue, conditionValue, result);
+        try {
+            int intValue = ((Number) sensorValue).intValue();
+            int conditionValue = condition.getValue();
 
-        return result;
+            switch (condition.getOperation()) {
+                case EQUALS:
+                    result = intValue == conditionValue;
+                    break;
+                case GREATER_THAN:
+                    result = intValue > conditionValue;
+                    break;
+                case LOWER_THAN:
+                    result = intValue < conditionValue;
+                    break;
+                default:
+                    result = false;
+            }
+
+            log.debug("Condition check: type={}, operation={}, sensorValue={}, conditionValue={}, result={}",
+                    condition.getType(), condition.getOperation(), intValue, conditionValue, result);
+
+            return result;
+        } catch (ClassCastException e) {
+            log.error("Failed to cast sensor value to Number: value={}, type={}",
+                    sensorValue, sensorValue.getClass().getSimpleName(), e);
+            return false;
+        }
     }
 }

@@ -10,29 +10,23 @@ import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
-import ru.yandex.practicum.client.HubRouterClient;
-import ru.yandex.practicum.entity.Scenario;
 import ru.yandex.practicum.entity.Snapshot;
-import ru.yandex.practicum.grpc.telemetry.event.DeviceActionProto;
-import ru.yandex.practicum.repository.ScenarioRepository;
-import ru.yandex.practicum.service.ScenarioExecutor;
-import ru.yandex.practicum.kafka.telemetry.event.SensorsSnapshotAvro;
 import ru.yandex.practicum.kafka.telemetry.event.SensorStateAvro;
+import ru.yandex.practicum.kafka.telemetry.event.SensorsSnapshotAvro;
+import ru.yandex.practicum.service.SnapshotProcessingService;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
-import java.util.HashMap;
 
 @Slf4j
 @Component
 @RequiredArgsConstructor
 public class SnapshotProcessor {
 
-    private final ScenarioRepository scenarioRepository;
-    private final ScenarioExecutor scenarioExecutor;
-    private final HubRouterClient hubRouterClient;
+    private final SnapshotProcessingService processingService;
 
     @Value("${kafka.bootstrap-servers}")
     private String bootstrapServers;
@@ -54,53 +48,19 @@ public class SnapshotProcessor {
             while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
                 for (ConsumerRecord<String, byte[]> record : records) {
-                    processSnapshot(record.value());
+                    try {
+                        Snapshot snapshot = deserializeSnapshot(record.value());
+                        log.info("Processing snapshot for hubId: {}, sensors: {}",
+                                snapshot.getHubId(), snapshot.getSensorValues().keySet());
+                        processingService.processSnapshot(snapshot);
+                    } catch (Exception e) {
+                        log.error("Error processing snapshot", e);
+                    }
                 }
                 consumer.commitSync();
             }
         } catch (Exception e) {
             log.error("Error in snapshot consumer loop", e);
-        }
-    }
-
-    private void processSnapshot(byte[] snapshotBytes) {
-        try {
-            Snapshot snapshot = deserializeSnapshot(snapshotBytes);
-            log.info("Processing snapshot for hubId: {}, sensors: {}",
-                    snapshot.getHubId(), snapshot.getSensorValues().keySet());
-
-            List<Scenario> scenarios = scenarioRepository.findByHubId(snapshot.getHubId());
-            log.info("Found {} scenarios for hubId: {}", scenarios.size(), snapshot.getHubId());
-
-            for (Scenario scenario : scenarios) {
-                log.debug("Evaluating scenario: {} for hubId: {}", scenario.getName(), snapshot.getHubId());
-
-                List<DeviceActionProto> actions = scenarioExecutor.evaluateScenario(scenario, snapshot);
-                if (!actions.isEmpty()) {
-                    log.info("Scenario '{}' triggered for hubId: {}, executing {} actions",
-                            scenario.getName(), snapshot.getHubId(), actions.size());
-
-                    for (DeviceActionProto action : actions) {
-                        log.info("Sending action to HubRouter: hubId={}, scenario={}, sensorId={}, type={}, value={}",
-                                snapshot.getHubId(), scenario.getName(), action.getSensorId(),
-                                action.getType(), action.hasValue() ? action.getValue() : "no value");
-
-                        hubRouterClient.sendAction(
-                                snapshot.getHubId(),
-                                scenario.getName(),
-                                action.getSensorId(),
-                                action,
-                                com.google.protobuf.Timestamp.newBuilder()
-                                        .setSeconds(System.currentTimeMillis()  / 1000)
-                                        .build()
-                        );
-                    }
-                } else {
-                    log.debug("Scenario '{}' conditions not met for hubId: {}", scenario.getName(), snapshot.getHubId());
-                }
-            }
-        } catch (Exception e) {
-            log.error("Error processing snapshot", e);
         }
     }
 
@@ -150,7 +110,6 @@ public class SnapshotProcessor {
                     log.error("Failed to get motion value", e);
                 }
                 break;
-
             case "TemperatureSensorAvro":
                 try {
                     return data.getClass().getMethod("getTemperatureC").invoke(data);
@@ -158,7 +117,6 @@ public class SnapshotProcessor {
                     log.error("Failed to get temperature value", e);
                 }
                 break;
-
             case "LightSensorAvro":
                 try {
                     return data.getClass().getMethod("getLuminosity").invoke(data);
@@ -166,7 +124,6 @@ public class SnapshotProcessor {
                     log.error("Failed to get luminosity value", e);
                 }
                 break;
-
             case "ClimateSensorAvro":
                 try {
                     return data.getClass().getMethod("getTemperatureC").invoke(data);
@@ -174,7 +131,6 @@ public class SnapshotProcessor {
                     log.error("Failed to get climate temperature value", e);
                 }
                 break;
-
             case "SwitchSensorAvro":
                 try {
                     return data.getClass().getMethod("getState").invoke(data);
@@ -183,7 +139,6 @@ public class SnapshotProcessor {
                 }
                 break;
         }
-
         return null;
     }
 
