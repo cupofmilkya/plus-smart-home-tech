@@ -86,7 +86,6 @@ message ScenarioRemovedEventProto {
 message DeviceActionRequest {
   string hub_id = 1;
   string scenario_name = 2;
-  string sensor_id = 3;
-  DeviceActionProto action = 4;
-  google.protobuf.Timestamp timestamp = 5;
+  DeviceActionProto action = 3;
+  google.protobuf.Timestamp timestamp = 4;
 }
