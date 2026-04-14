@@ -27,7 +27,6 @@ public class HubRouterClient {
         DeviceActionRequest request = DeviceActionRequest.newBuilder()
                 .setHubId(hubId)
                 .setScenarioName(scenarioName)
-                .setSensorId(sensorId)
                 .setAction(action)
                 .setTimestamp(timestamp)
                 .build();
