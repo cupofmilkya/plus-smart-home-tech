@@ -9,6 +9,7 @@ import ru.yandex.practicum.entity.Scenario;
 import ru.yandex.practicum.entity.Snapshot;
 import ru.yandex.practicum.grpc.telemetry.event.DeviceActionProto;
 import ru.yandex.practicum.repository.ScenarioRepository;
+import com.google.protobuf.Timestamp;
 
 import java.util.List;
 
@@ -48,7 +49,7 @@ public class SnapshotProcessingService {
                             scenario.getName(),
                             action.getSensorId(),
                             action,
-                            com.google.protobuf.Timestamp.newBuilder()
+                            Timestamp.newBuilder()
                                     .setSeconds(System.currentTimeMillis() / 1000)
                                     .build()
                     );

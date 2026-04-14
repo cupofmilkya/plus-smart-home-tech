@@ -8,6 +8,7 @@ import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import ru.yandex.practicum.entity.Snapshot;
@@ -32,6 +33,7 @@ public class SnapshotProcessor {
     private String bootstrapServers;
 
     private volatile boolean running = true;
+    private KafkaConsumer<String, byte[]> consumer;
 
     public void start() {
         Properties props = new Properties();
@@ -42,25 +44,56 @@ public class SnapshotProcessor {
         props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
 
-        try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props)) {
-            consumer.subscribe(List.of("telemetry.snapshots.v1"));
+        consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(List.of("telemetry.snapshots.v1"));
+        log.info("SnapshotProcessor started, subscribed to telemetry.snapshots.v1");
 
+        try {
             while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
+
+                if (records.isEmpty()) {
+                    continue;
+                }
+
+                boolean allProcessedSuccessfully = true;
+
                 for (ConsumerRecord<String, byte[]> record : records) {
                     try {
                         Snapshot snapshot = deserializeSnapshot(record.value());
-                        log.info("Processing snapshot for hubId: {}, sensors: {}",
-                                snapshot.getHubId(), snapshot.getSensorValues().keySet());
+                        log.info("Processing snapshot for hubId: {}, sensors: {}, offset: {}",
+                                snapshot.getHubId(), snapshot.getSensorValues().keySet(), record.offset());
                         processingService.processSnapshot(snapshot);
                     } catch (Exception e) {
-                        log.error("Error processing snapshot", e);
+                        log.error("Error processing snapshot at offset: {}, partition: {}",
+                                record.offset(), record.partition(), e);
+                        allProcessedSuccessfully = false;
+                        break;
                     }
                 }
-                consumer.commitSync();
+
+                if (allProcessedSuccessfully) {
+                    consumer.commitSync();
+                    log.debug("Successfully committed offsets for {} records", records.count());
+                } else {
+                    log.warn("Skipping commit due to processing error. Will reprocess the same batch on next poll");
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
+                    }
+                }
             }
+        } catch (WakeupException e) {
+            log.info("WakeupException caught, shutting down SnapshotProcessor");
         } catch (Exception e) {
             log.error("Error in snapshot consumer loop", e);
+        } finally {
+            if (consumer != null) {
+                consumer.close();
+                log.info("SnapshotProcessor consumer closed");
+            }
         }
     }
 
@@ -144,6 +177,9 @@ public class SnapshotProcessor {
 
     public void stop() {
         running = false;
+        if (consumer != null) {
+            consumer.wakeup();
+        }
         log.info("SnapshotProcessor stopped");
     }
 }

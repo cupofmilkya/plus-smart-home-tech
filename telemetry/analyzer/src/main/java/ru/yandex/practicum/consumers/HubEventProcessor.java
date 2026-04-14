@@ -8,6 +8,7 @@ import org.apache.avro.specific.SpecificDatumReader;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.apache.kafka.clients.consumer.ConsumerRecords;
 import org.apache.kafka.clients.consumer.KafkaConsumer;
+import org.apache.kafka.common.errors.WakeupException;
 import org.springframework.beans.factory.annotation.Value;
 import ru.yandex.practicum.kafka.telemetry.event.*;
 import org.springframework.stereotype.Component;
@@ -36,23 +37,27 @@ public class HubEventProcessor implements Runnable {
     private String bootstrapServers;
 
     private volatile boolean running = true;
+    private KafkaConsumer<String, byte[]> consumer;
 
     @Override
     public void run() {
         Properties props = new Properties();
         props.put("bootstrap.servers", bootstrapServers);
         props.put("group.id", "analyzer-hub-group");
-        props.put("enable.auto.commit", "true");
+        props.put("enable.auto.commit", "false");
         props.put("auto.offset.reset", "earliest");
         props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.put("value.deserializer", "org.apache.kafka.common.serialization.ByteArrayDeserializer");
 
-        try (KafkaConsumer<String, byte[]> consumer = new KafkaConsumer<>(props)) {
-            consumer.subscribe(List.of("telemetry.hubs.v1"));
-            log.info("HubEventProcessor started, subscribed to telemetry.hubs.v1");
+        consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(List.of("telemetry.hubs.v1"));
+        log.info("HubEventProcessor started, subscribed to telemetry.hubs.v1");
 
+        try {
             while (running) {
                 ConsumerRecords<String, byte[]> records = consumer.poll(Duration.ofMillis(1000));
+                boolean hasError = false;
+
                 for (ConsumerRecord<String, byte[]> record : records) {
                     try {
                         log.debug("Received message from topic: {}, partition: {}, offset: {}, key: {}, value size: {} bytes",
@@ -60,7 +65,7 @@ public class HubEventProcessor implements Runnable {
                                 record.value() != null ? record.value().length : 0);
 
                         if (record.value() == null || record.value().length == 0) {
-                            log.warn("Empty or null message received");
+                            log.warn("Empty or null message received at offset: {}", record.offset());
                             continue;
                         }
 
@@ -71,11 +76,33 @@ public class HubEventProcessor implements Runnable {
                         processHubEvent(event);
                     } catch (Exception e) {
                         log.error("Error processing hub event at offset: {}", record.offset(), e);
+                        hasError = true;
+                        break;
+                    }
+                }
+
+                if (!hasError && !records.isEmpty()) {
+                    consumer.commitSync();
+                    log.debug("Committed offsets for {} records", records.count());
+                } else if (hasError) {
+                    log.warn("Skipping commit due to processing error, will retry on next poll");
+                    try {
+                        Thread.sleep(1000);
+                    } catch (InterruptedException e) {
+                        Thread.currentThread().interrupt();
+                        break;
                     }
                 }
             }
+        } catch (WakeupException e) {
+            log.info("WakeupException caught, shutting down HubEventProcessor");
         } catch (Exception e) {
             log.error("Fatal error in HubEventProcessor", e);
+        } finally {
+            if (consumer != null) {
+                consumer.close();
+                log.info("HubEventProcessor consumer closed");
+            }
         }
     }
 
@@ -240,6 +267,9 @@ public class HubEventProcessor implements Runnable {
 
     public void stop() {
         running = false;
+        if (consumer != null) {
+            consumer.wakeup();
+        }
         log.info("HubEventProcessor stopped");
     }
 }
